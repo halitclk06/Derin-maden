@@ -1,0 +1,91 @@
+name: Android build
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  APP_ID: com.halitclk06.derinmaden
+  KS_PASS: DerinMaden-Anahtar-2026
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Proje
+        run: |
+          mkdir www
+          cp index.html ads-config.js www/
+          npm init -y
+          npm i --legacy-peer-deps @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8 @capacitor-community/admob@8
+          echo "{\"appId\":\"$APP_ID\",\"appName\":\"Derin Maden\",\"webDir\":\"www\"}" > capacitor.config.json
+          npx cap add android
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+      - name: AdMob uygulama kimligi
+        run: |
+          python3 - <<'EOF'
+          p='android/app/src/main/AndroidManifest.xml'
+          s=open(p).read()
+          meta='<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-1657493910445917~8582044975"/>'
+          assert '</application>' in s
+          s=s.replace('</application>',meta+'</application>')
+          open(p,'w').write(s)
+          EOF
+      - name: Simge
+        continue-on-error: true
+        run: |
+          pip install pillow
+          python3 - <<'EOF'
+          from PIL import Image
+          import os,shutil,glob
+          im=Image.open('icon-512.png').convert('RGBA')
+          res='android/app/src/main/res'
+          shutil.rmtree(res+'/mipmap-anydpi-v26',ignore_errors=True)
+          for d,sz in [('mdpi',48),('hdpi',72),('xhdpi',96),('xxhdpi',144),('xxxhdpi',192)]:
+              for f in glob.glob(res+'/mipmap-'+d+'/ic_launcher*'):
+                  os.remove(f)
+              for n in ['ic_launcher','ic_launcher_round']:
+                  im.resize((sz,sz),Image.LANCZOS).save(res+'/mipmap-'+d+'/'+n+'.png')
+          EOF
+      - name: Test APK (test reklamli)
+        run: |
+          sed -i 's/testing:false/testing:true/' www/ads-config.js
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../Derin-Maden-test.apk
+      - name: Yukleme anahtari
+        run: |
+          if [ ! -f upload-keystore.jks ]; then
+            keytool -genkeypair -keystore upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000 -storepass "$KS_PASS" -keypass "$KS_PASS" -dname "CN=Derin Maden,O=Derin Maden,C=TR"
+            echo "NEWKEY=1" >> $GITHUB_ENV
+          fi
+      - name: Yayin AAB (gercek reklam)
+        run: |
+          sed -i 's/testing:true/testing:false/' www/ads-config.js
+          npx cap sync android
+          cd android
+          ./gradlew bundleRelease
+          cp app/build/outputs/bundle/release/app-release.aab ../Derin-Maden.aab
+          cd ..
+          jarsigner -sigalg SHA256withRSA -digestalg SHA-256 -keystore upload-keystore.jks -storepass "$KS_PASS" -keypass "$KS_PASS" Derin-Maden.aab upload
+      - name: Anahtari depoya kaydet
+        if: env.NEWKEY == '1'
+        run: |
+          git config user.name "build"
+          git config user.email "build@users.noreply.github.com"
+          git add upload-keystore.jks
+          git commit -m "Yukleme anahtari"
+          git push
+      - name: Yayinla
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" Derin-Maden.aab Derin-Maden-test.apk --title "Derleme ${{ github.run_number }}" --notes "Derin-Maden-test.apk telefona kurulur (test reklamli). Derin-Maden.aab Play Console'a yuklenir."
