@@ -50,6 +50,8 @@ h2{font-size:15px;margin:16px 0 8px}
 #wb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:19;align-items:center;justify-content:center}
 .wbtn{background:#ffcf4a;color:#222;border:0;border-radius:10px;padding:10px;font:inherit;font-weight:bold;cursor:pointer}
 #wb1{background:none;border:1px solid #666;color:#bbb;border-radius:10px;padding:8px;font:inherit;cursor:pointer}
+.ebar{display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:3;gap:2px;align-items:center;background:rgba(0,0,0,.5);padding:3px 6px;border-radius:8px;font-size:11px}
+.ebar i{display:block;width:9px;height:7px;border-radius:2px;border:1px solid rgba(255,255,255,.35)}
 .bhud{display:none;position:absolute;top:8px;left:8px;z-index:4;background:rgba(0,0,0,.7);color:#ffe27a;border:1px solid #ffcf4a;border-radius:10px;padding:4px 10px;font-size:13px;font-weight:bold;min-width:84px}
 .bbar{height:3px;background:rgba(255,255,255,.25);margin-top:4px;border-radius:2px;overflow:hidden}
 .bbar i{display:block;height:100%;background:#ffcf4a}
@@ -76,11 +78,13 @@ h2{font-size:15px;margin:16px 0 8px}
 <div class="shaft" id="shaft">
   <canvas id="cv"></canvas>
   <div class="bhud" id="bhud"></div>
+  <div class="ebar" id="ebar"></div>
   <div class="bar">
     <button id="rock" aria-label="Kaz">⛏️</button>
     <div class="info"><span id="layer"></span><br>Tık başına <b id="cp">1</b><br>🪙 <b id="gold">0</b><span id="gems"></span><br><span id="nxt"></span><br><span id="boost"></span></div>
   </div>
 </div>
+<button class="up" id="helpBtn"><span class="ic">👷</span><span class="t"><b id="helpT"></b><small id="helpS"></small></span><span class="c" id="helpC"></span></button>
 <button class="up" id="marketBtn"><span class="ic">🛒</span><span class="t"><b>Pazar</b><small id="mktS"></small></span><span class="c" id="mktC"></span></button>
 <button class="up" id="hourBtn"><span class="ic">🎁</span><span class="t"><b id="hourT"></b><small id="hourS"></small></span><span class="c" id="hourC"></span></button>
 <h2>Kazma ve verim</h2>
@@ -239,17 +243,18 @@ function offerTick(){
 var ADS=window.ADS_CONFIG||{units:{}},adBusy=false;
 function isNative(){return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform())}
 function nativeAd(kind,done){
- var AM=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.AdMob,id=ADS.units&&(ADS.units[kind]||ADS.units.afk);
+ var AM=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.AdMob,id=ADS.testing?'ca-app-pub-3940256099942544/5224354917':(ADS.units&&(ADS.units[kind]||ADS.units.afk));
  if(!AM||!id){toast('Reklam ayarı eksik');return}
  if(adBusy)return;adBusy=true;
  var unlock=setTimeout(function(){adBusy=false},180000);
  (async function(){
   try{
+   await Promise.race([adInit,new Promise(function(r){setTimeout(r,8000)})]);
    await AM.prepareRewardVideoAd({adId:id,isTesting:!!ADS.testing});
    var item=await AM.showRewardVideoAd();
    clearTimeout(unlock);adBusy=false;
    if(item)done();
-  }catch(e){clearTimeout(unlock);adBusy=false;toast('Reklam şu an yüklenemedi, biraz sonra tekrar dene')}
+  }catch(e){clearTimeout(unlock);adBusy=false;toast('Reklam yüklenemedi ('+((e&&(e.message||e.code))||'hata')+'). Biraz sonra tekrar dene')}
  })();
 }
 function showRewardedAd(kind,done){
@@ -264,7 +269,7 @@ function showRewardedAd(kind,done){
 var inMarket=false;
 function latestW(){var r='earth';WS.forEach(function(w){if(w=='earth'||S.unl[w])r=w});return r}
 function showView(){document.getElementById('gameView').style.display=inMarket?'none':'block';document.getElementById('marketSec').style.display=inMarket?'block':'none'}
-function setMarket(){inMarket=true;showView();buildMarket();render()}
+function setMarket(){inMarket=true;showView();buildMarket();buildEnergy();render()}
 function buildMarket(){var el=document.getElementById('market');el.innerHTML='';WS.forEach(function(w){if(w=='earth'||!GEM[w]||!S.unl[w])return;var pv=prevW(w),pg=GEM[pv],g=GEM[w];
  mk('market','t_'+w,'🔁','10 '+pg.ic+' '+pg.n+' → 1 '+g.ic+' '+g.n,'Takas için bir video izlenir','dg',function(){
   if(S.gem[pv]<10)return;
@@ -274,6 +279,18 @@ document.getElementById('marketBtn').onclick=function(){if(S.unl.moon)setMarket(
 document.getElementById('mktBack').onclick=function(){setWorld(S.world)};
 document.getElementById('hourBtn').onclick=function(){var lw=latestW(),amt=psOf(lw)*3600;if(amt<=0||Date.now()<S.hourAt)return;
  showRewardedAd('hour',function(){var a2=psOf(lw)*3600;gain(lw,a2);S.hourAt=Date.now()+1800000;toast('🎁 1 saatlik kazanç geldi: +'+fmt(a2)+' '+ON[lw]);render()})};
+
+/* ---------- yardımcı madenci ---------- */
+function hWork(w){var h=S[w].hp;return !!(h&&h.own&&h.on&&h.en>0)}
+function hm(w){return hWork(w)?2:1}
+function hSuit(w){return {suit:'#3aa86a',skin:SUIT[w].skin,dk:'#2a7a4a',helm:'#ff8a3a',strap:'#ffd2a0'}}
+function buildEnergy(){var el=document.getElementById('market'),any=false;WS.forEach(function(w){var h=S[w].hp;if(h&&h.own){if(!any){any=true;var hd=document.createElement('h2');hd.textContent='🔋 Yardımcı enerjisi';el.appendChild(hd)}
+ mk('market','e_'+w,'🔋','Enerji · '+WN[w],'Video izle: +1 enerji (1 bar = 6 dk çalışma)','dg',function(){var h2=S[w].hp;if(!h2||h2.en>=9.99)return;showRewardedAd('energy',function(){var h3=S[w].hp;if(h3){h3.en=Math.min(10,h3.en+1);toast('🔋 +1 enerji · '+WN[w]);render()}})})}})}
+function updateEnergy(){WS.forEach(function(w){var h=S[w].hp,b=document.getElementById('u_e_'+w);if(!h||!b)return;b.querySelector('.c').textContent=h.en.toFixed(1)+'/10';b.disabled=h.en>=9.99;b.classList.toggle('ok',h.en<9.99)})}
+document.getElementById('helpBtn').onclick=function(){var w=S.world,h=S[w].hp,cw=GEM[w]?w:prevW(w);
+ if(!h||!h.own){if(S.gem[cw]>=20){S.gem[cw]-=20;S[w].hp={own:true,en:10,on:false};toast('👷 Yardımcı madenci seninle!');snd(660,.2,.05,'triangle');render()}else toast('Yardımcı için 20 '+GEM[cw].ic+' gerekli');return}
+ if(h.on){h.on=false;render();return}
+ if(h.en>0){h.on=true;render()}};
 
 /* ---------- arayüz ---------- */
 function mk(parent,id,ic,n,d,cls,fn){var b=document.createElement('button');b.className='up '+cls;b.id='u_'+id;
@@ -310,7 +327,7 @@ function render(){
  var w=S.world,P=S[w];
  document.getElementById('ore').textContent=fmt(P.ore);
  var ol=ON[w];document.getElementById('oreL').textContent=ol.charAt(0).toUpperCase()+ol.slice(1);
- document.getElementById('ps').textContent=fmt(psOf(w)*bm());
+ document.getElementById('ps').textContent=fmt(psOf(w)*bm()*hm(w));
  document.getElementById('cp').textContent=fmt(clickPow(w)*cmult()*bm())+(combo>=5?' (seri ×'+cmult().toFixed(1)+')':'');
  document.getElementById('gold').textContent=fmt(S.gold);
  var gs='';WS.forEach(function(k){if(GEM[k]&&(k=='earth'||S.unl[k]))gs+=' &nbsp;'+GEM[k].ic+' <b>'+S.gem[k]+'</b>'});
@@ -327,12 +344,18 @@ function render(){
  document.getElementById('hourS').textContent=ha<=0?'Önce bu madende bir makine al':(cd>0?'Tekrar alınabilir: '+Math.floor(cd/60)+':'+('0'+cd%60).slice(-2):'Video izle, saniyelik kazancının 1 saati hesabına geçsin');
  document.getElementById('hourC').textContent='+'+fmt(ha);
  hb.disabled=ha<=0||cd>0;hb.classList.toggle('ok',!hb.disabled);
+ var hh=S[w].hp,hcw=GEM[w]?w:prevW(w),hbtn=document.getElementById('helpBtn'),eb=document.getElementById('ebar');
+ if(!hh||!hh.own){document.getElementById('helpT').textContent='Yardımcı madenci';document.getElementById('helpS').textContent='Kendi kendine tıklar, üretimi 2× yapar · 1 saatlik enerji';document.getElementById('helpC').textContent='20 '+GEM[hcw].ic;hbtn.disabled=S.gem[hcw]<20;hbtn.classList.toggle('ok',S.gem[hcw]>=20);eb.style.display='none'}
+ else{var wk=hWork(w);document.getElementById('helpT').textContent='Yardımcı madenci · '+(wk?'çalışıyor':'durdu');
+  document.getElementById('helpS').textContent=(wk?'Kapatmak için dokun · ':'Başlatmak için dokun · ')+'enerji '+hh.en.toFixed(1)+'/10 · '+(wk?Math.ceil(hh.en*6)+' dk çalışır':(hh.en>=10?'dolu':Math.ceil((10-hh.en)*10)+' dk sonra dolar'));
+  document.getElementById('helpC').textContent=wk?'⏸':(hh.en>0?'▶':'😴');hbtn.disabled=!wk&&hh.en<=0;hbtn.classList.toggle('ok',wk);
+  var es='<span>👷</span>';for(var ei=0;ei<10;ei++){var fp=Math.max(0,Math.min(1,hh.en-ei))*100;es+='<i style="background:linear-gradient(90deg,#7cf06a '+fp+'%,rgba(255,255,255,.18) '+fp+'%)"></i>'}eb.innerHTML=es;eb.style.display='flex'}
  var mb=document.getElementById('marketBtn'),mo=S.unl.moon,can=false;
  if(mo)WS.forEach(function(k){if(k!='earth'&&GEM[k]&&S.unl[k]&&S.gem[prevW(k)]>=10)can=true});
  mb.style.opacity=mo?1:.6;mb.classList.toggle('ok',can);
  document.getElementById('mktS').textContent=mo?(can?'Takas yapabilirsin · video izle':'Önceki madenin taşlarını takas et'):'🔒 Ay madenine geçince açılır';
  document.getElementById('mktC').textContent=mo?'›':'🔒';
- if(inMarket)updateMarket();
+ if(inMarket){updateMarket();updateEnergy()}
  var G=GEM[w],t;
  if(G){t='Şans: '+G.ic+' %'+pct(chance(w))+(w=='earth'?' · 🪙 %'+pct(chanceG()):' · hedef '+Math.min(10,S.gem[w])+'/10')}
  else t='Sonraki durak: yakında 🌌';
@@ -371,7 +394,10 @@ document.getElementById('snd').onclick=function(){S.mute=!S.mute;this.textConten
 /* ---------- oyun döngüsü ---------- */
 setInterval(function(){
  var now=Date.now(),dt=(now-S.t)/1000;S.t=now;if(dt<=0)return;
- var af=dt>3?0.1:1;WS.forEach(function(w){var p=psOf(w);if(p>0){gain(w,p*bm()*af*Math.min(dt,14400));strike(w,1.5*(1+0.25*L('str',w))*af*Math.min(dt,5))}});
+ var af=dt>3?0.1:1;WS.forEach(function(w){var p=psOf(w);if(p>0){gain(w,p*bm()*af*(dt>3?1:hm(w))*Math.min(dt,14400));strike(w,1.5*(1+0.25*L('str',w))*af*Math.min(dt,5))}});
+ WS.forEach(function(w){var h=S[w].hp;if(!h||!h.own)return;
+  if(h.on&&h.en>0){var d=Math.min(dt,3);h.en=Math.max(0,h.en-d/360);gain(w,clickPow(w)*bm()*3*d);if(h.en<=0){h.on=false;toast('👷 '+WN[w]+' yardımcısının enerjisi bitti')}}
+  else if(!h.on){h.en=Math.min(10,h.en+Math.min(dt,14400)/600)}});
  if(performance.now()-lastHit>800)combo=0;
  vein();offerTick();render();
 },200);
@@ -485,6 +511,7 @@ function draw(t){
  var lpx=wx-58+11,lpy=FL-64,bm=cx.createLinearGradient(lpx,0,wx+10,0);bm.addColorStop(0,'rgba('+T.beam+',.3)');bm.addColorStop(1,'rgba('+T.beam+',0)');
  cx.fillStyle=bm;cx.beginPath();cx.moveTo(lpx,lpy);cx.lineTo(wx+10,lpy-50);cx.lineTo(wx+10,lpy+62);cx.closePath();cx.fill();
  miner2(wx-58,FL,2.3,SUIT[w],ang);
+ var hq=S[w].hp;if(hq&&hq.own){miner2(wx-24,FL+8,1.35,hSuit(w),hWork(w)&&!RM?swing(t*.007+1.3):0.9)}
  cx.save();cx.translate(ox,0);
  if(!GEM[w]){for(var i=0;i<4;i++)gem(slotsD[i][0],slotsD[i][1],9,t,AMB)}
  else{var ss=SS[w];for(var i=0;i<3;i++){var k=Math.min(1,(now-ss[i])/700);if(k>0)gem(slotsD[i][0],slotsD[i][1],10*k,t,GEM[w].pal)}
@@ -499,8 +526,9 @@ function draw(t){
 }
 function frame(t){draw(t);requestAnimationFrame(frame)}
 buildTabs();
-if(isNative()&&Capacitor.Plugins&&Capacitor.Plugins.AdMob)(async function(){var AM=Capacitor.Plugins.AdMob;try{await AM.initialize({});var ci=await AM.requestConsentInfo();if(ci&&ci.isConsentFormAvailable&&ci.status==='REQUIRED')await AM.showConsentForm()}catch(e){}})();
+var adInit=(isNative()&&Capacitor.Plugins&&Capacitor.Plugins.AdMob)?(async function(){var AM=Capacitor.Plugins.AdMob;try{await AM.initialize({});var ci=await AM.requestConsentInfo();if(ci&&ci.isConsentFormAvailable&&ci.status==='REQUIRED')await AM.showConsentForm()}catch(e){}})():Promise.resolve();
 document.getElementById('snd').textContent=S.mute?'🔇':'🔊';
+if(away>30)WS.forEach(function(w){var h=S[w].hp;if(h&&h.own&&!h.on)h.en=Math.min(10,h.en+Math.min(away,14400)/600)});
 if(away>30){var cap=Math.min(away,14400),got=[];WS.forEach(function(w){var g=psOf(w)*cap*0.1;if(g>0){gain(w,g);got.push([w,g])}});
  if(got.length){var wb=document.getElementById('wb');
   document.getElementById('wbtxt').innerHTML='Sen yokken ('+Math.floor(cap/3600)+' sa '+Math.floor(cap%3600/60)+' dk) madencilerin bu kadar kazı yaptı:<br><b>'+got.map(function(x){return fmt(x[1])+' '+ON[x[0]]}).join('<br>')+'</b>';
